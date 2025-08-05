@@ -1,0 +1,77 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+from google.cloud import bigquery
+import pydeck as pdk
+
+st.set_page_config(page_title="Fuel Prices Map", layout="wide")
+st.title("Fuel Prices Map")
+
+# BigQuery Setup
+client = bigquery.Client()
+
+# SQL Query
+query = """
+SELECT 
+  last_updated, site_id, brand, address, postcode, latitude, longitude, fuel_type, fuel_price
+FROM `ferrous-store-465117-h0.prod.mart_latest_prices`
+WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+"""
+
+# Fetch Data
+@st.cache_data(ttl=600)
+def load_data():
+    df = client.query(query).to_dataframe()
+    return df
+
+df = load_data()
+
+# Fuel Type Filter
+fuel_types = df["fuel_type"].unique()
+selected_fuel = st.selectbox("Choose Fuel Type", sorted(fuel_types))
+
+filtered_df = df[df["fuel_type"] == selected_fuel].copy()
+
+# Normalise price and calculate colour
+min_price = filtered_df["fuel_price"].min()
+max_price = filtered_df["fuel_price"].max()
+price_range = max(max_price - min_price, 1e-3)  # Avoid divide by zero
+
+# Normalise to [0, 1]
+filtered_df["colour_value"] = (filtered_df["fuel_price"] - min_price) / price_range
+
+# Convert to colour: Green → Red
+def price_to_colour(val):
+    r = int(255 * val)
+    g = int(255 * (1 - val))
+    return [r, g, 0, 160]
+
+filtered_df["colour"] = filtered_df["colour_value"].apply(price_to_colour)
+
+# Map
+st.subheader(f"Showing {selected_fuel} prices at {len(filtered_df)} locations")
+
+st.pydeck_chart(pdk.Deck(
+    initial_view_state=pdk.ViewState(
+        latitude=filtered_df["latitude"].mean(),
+        longitude=filtered_df["longitude"].mean(),
+        zoom=6,
+        pitch=0,
+    ),
+    layers=[
+        pdk.Layer(
+            "ScatterplotLayer",
+            data=filtered_df,
+            get_position="[longitude, latitude]",
+            get_color="colour",
+            get_radius=200,  # base radius in meters
+            radius_min_pixels=4,  # always visible
+            radius_max_pixels=20,
+            pickable=True,
+        )
+    ],
+    tooltip={
+        "html": "<b>{brand}</b><br />{address}<br /><b>£{fuel_price}</b>",
+        "style": {"color": "white"}
+    }
+))
