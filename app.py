@@ -1,14 +1,19 @@
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
 from google.cloud import bigquery
+from google.oauth2 import service_account
 import pydeck as pdk
 
 st.set_page_config(page_title="Fuel Prices Map", layout="wide")
 st.title("Fuel Prices Map")
 
 # BigQuery Setup
-client = bigquery.Client()
+credentials = service_account.Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"]
+)
+client = bigquery.Client(credentials=credentials, project=credentials.project_id)
 
 # SQL Query
 query = """
