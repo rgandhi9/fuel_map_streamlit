@@ -52,6 +52,9 @@ filtered_df = df[df["fuel_type"] == selected_fuel].copy()
 if selected_brand != "All Brands":
     filtered_df = filtered_df[filtered_df["brand"] == selected_brand].copy()
 
+# Remove rows with NaN fuel prices
+filtered_df = filtered_df.dropna(subset=['fuel_price']).copy()
+
 # Check if we have data after filtering
 if len(filtered_df) == 0:
     st.warning("No data available for the selected combination of fuel type and brand.")
