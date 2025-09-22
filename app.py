@@ -31,11 +31,31 @@ def load_data():
 
 df = load_data()
 
-# Fuel Type Filter
-fuel_types = df["fuel_type"].unique()
-selected_fuel = st.selectbox("Choose Fuel Type", sorted(fuel_types))
+# Create two columns for the filters
+col1, col2 = st.columns(2)
 
+# Fuel Type Filter
+with col1:
+    fuel_types = df["fuel_type"].unique()
+    selected_fuel = st.selectbox("Choose Fuel Type", sorted(fuel_types))
+
+# Brand Filter
+with col2:
+    brands = df["brand"].unique()
+    # Add "All Brands" option
+    brand_options = ["All Brands"] + sorted([brand for brand in brands if pd.notna(brand)])
+    selected_brand = st.selectbox("Choose Brand", brand_options)
+
+# Apply filters
 filtered_df = df[df["fuel_type"] == selected_fuel].copy()
+
+if selected_brand != "All Brands":
+    filtered_df = filtered_df[filtered_df["brand"] == selected_brand].copy()
+
+# Check if we have data after filtering
+if len(filtered_df) == 0:
+    st.warning("No data available for the selected combination of fuel type and brand.")
+    st.stop()
 
 # Normalise price and calculate colour
 min_price = filtered_df["fuel_price"].min()
@@ -54,7 +74,8 @@ def price_to_colour(val):
 filtered_df["colour"] = filtered_df["colour_value"].apply(price_to_colour)
 
 # Map
-st.subheader(f"Showing {selected_fuel} prices at {len(filtered_df)} locations")
+brand_text = f" from {selected_brand}" if selected_brand != "All Brands" else ""
+st.subheader(f"Showing {selected_fuel} prices{brand_text} at {len(filtered_df)} locations")
 
 st.pydeck_chart(pdk.Deck(
     initial_view_state=pdk.ViewState(
