@@ -61,45 +61,20 @@ if len(filtered_df) == 0:
     st.stop()
 
 # Show last update time by brand
-st.subheader("Data Freshness by Brand")
 brand_updates = df.groupby('brand')['last_updated'].max().reset_index()
 brand_updates['last_updated'] = pd.to_datetime(brand_updates['last_updated'])
-brand_updates = brand_updates.sort_values('last_updated', ascending=False)
-
-# Calculate how fresh the data is
 now = pd.Timestamp.now(tz=brand_updates['last_updated'].dt.tz)
 brand_updates['hours_ago'] = (now - brand_updates['last_updated']).dt.total_seconds() / 3600
 
-# Display in columns
-cols = st.columns(5)
-for idx, row in brand_updates.iterrows():
-    col = cols[idx % 5]
-    with col:
-        hours = row['hours_ago']
-        if hours < 24:
-            delta_color = "normal"
-            status = "✓"
-        elif hours < 48:
-            delta_color = "normal"
-            status = "⚠"
-        else:
-            delta_color = "inverse"
-            status = "✗"
-        
-        if hours < 1:
-            time_str = f"{int(hours * 60)}m ago"
-        elif hours < 24:
-            time_str = f"{int(hours)}h ago"
-        else:
-            time_str = f"{int(hours / 24)}d ago"
-        
-        st.metric(
-            label=f"{status} {row['brand']}", 
-            value=time_str,
-            delta=None
-        )
+# Create compact status string
+statuses = []
+for _, row in brand_updates.iterrows():
+    h = row['hours_ago']
+    status = '✓' if h < 24 else '⚠' if h < 48 else '✗'
+    time = f"{int(h)}h" if h < 24 else f"{int(h/24)}d"
+    statuses.append(f"{status} {row['brand']} ({time})")
 
-st.divider()
+st.caption("**Data freshness:** " + " | ".join(statuses))
 
 # Use percentiles to handle outliers better
 p5 = filtered_df["fuel_price"].quantile(0.05)  # 5th percentile
