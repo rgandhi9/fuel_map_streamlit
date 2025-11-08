@@ -60,13 +60,14 @@ if len(filtered_df) == 0:
     st.warning("No data available for the selected combination of fuel type and brand.")
     st.stop()
 
-# Normalise price and calculate colour
-min_price = filtered_df["fuel_price"].min()
-max_price = filtered_df["fuel_price"].max()
-price_range = max(max_price - min_price, 1e-3)  # Avoid divide by zero
+# Use percentiles to handle outliers better
+p5 = filtered_df["fuel_price"].quantile(0.05)  # 5th percentile
+p95 = filtered_df["fuel_price"].quantile(0.95)  # 95th percentile
 
-# Normalise to [0, 1]
-filtered_df["colour_value"] = (filtered_df["fuel_price"] - min_price) / price_range
+# Clip extreme values and normalise
+filtered_df["clipped_price"] = filtered_df["fuel_price"].clip(p5, p95)
+price_range = max(p95 - p5, 1e-3)
+filtered_df["colour_value"] = (filtered_df["clipped_price"] - p5) / price_range
 
 # Convert to colour: Green → Red
 def price_to_colour(val):
