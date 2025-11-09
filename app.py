@@ -60,6 +60,71 @@ if len(filtered_df) == 0:
     st.warning("No data available for the selected combination of fuel type and brand.")
     st.stop()
 
+# Route Cost Calculator
+st.subheader("Route Cost Calculator")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    start_location = st.text_input("Start Location", placeholder="e.g., London, UK")
+
+with col2:
+    end_location = st.text_input("End Location", placeholder="e.g., Manchester, UK")
+
+with col3:
+    mpg = st.number_input("Vehicle MPG", min_value=1, max_value=150, value=40, step=1)
+
+if start_location and end_location:
+    try:
+        from mapbox import Geocoder, Directions
+        
+        # Initialise Mapbox services
+        geocoder = Geocoder(access_token=st.secrets["mapbox_access_token"])
+        directions_service = Directions(access_token=st.secrets["mapbox_access_token"])
+        
+        # Geocode start and end locations
+        start_response = geocoder.forward(start_location, limit=1)
+        end_response = geocoder.forward(end_location, limit=1)
+        
+        if start_response.status_code == 200 and end_response.status_code == 200:
+            start_coords = start_response.geojson()['features'][0]['geometry']['coordinates']
+            end_coords = end_response.geojson()['features'][0]['geometry']['coordinates']
+            
+            # Get route
+            origin = {
+                'type': 'Feature',
+                'geometry': {'type': 'Point', 'coordinates': start_coords}
+            }
+            destination = {
+                'type': 'Feature',
+                'geometry': {'type': 'Point', 'coordinates': end_coords}
+            }
+            
+            route_response = directions_service.directions([origin, destination], 'mapbox/driving')
+            
+            if route_response.status_code == 200:
+                route_data = route_response.json()
+                distance_meters = route_data['routes'][0]['distance']
+                distance_miles = distance_meters * 0.000621371  # Convert to miles
+                duration_seconds = route_data['routes'][0]['duration']
+                duration_minutes = duration_seconds / 60
+                
+                # Calculate fuel needed
+                fuel_needed_gallons = distance_miles / mpg
+                
+                st.success(f"✓ Route found: {distance_miles:.1f} miles ({duration_minutes:.0f} minutes)")
+                st.info(f"Fuel needed: {fuel_needed_gallons:.2f} gallons at {mpg} MPG")
+                
+            else:
+                st.error("Could not calculate route. Please try different locations.")
+        else:
+            st.error("Could not find one or both locations. Please check your addresses.")
+            
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+
+st.divider()
+
 # Show last update time by brand
 brand_updates = df.groupby('brand')['last_updated'].max().reset_index()
 brand_updates['last_updated'] = pd.to_datetime(brand_updates['last_updated'])
