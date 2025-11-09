@@ -2,3 +2,4 @@ pandas
 numpy
 streamlit
 google-cloud-bigquery[pandas]
+mapbox
