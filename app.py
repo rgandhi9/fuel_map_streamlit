@@ -63,7 +63,7 @@ if len(filtered_df) == 0:
 # Route Cost Calculator
 st.subheader("Route Cost Calculator")
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
     start_location = st.text_input("Start Location", placeholder="e.g., London, UK")
@@ -71,12 +71,19 @@ with col1:
 with col2:
     end_location = st.text_input("End Location", placeholder="e.g., Manchester, UK")
 
+col3, col4 = st.columns(2)
+
 with col3:
-    mpg = st.number_input("Vehicle MPG", min_value=1, max_value=150, value=40, step=1)
+    mpg = st.number_input("Vehicle MPG", min_value=1, max_value=50, value=10, step=0.1)
+
+with col4:
+    current_range = st.number_input("Current fuel range (miles)", min_value=0, value=0, 
+                                    help="How many miles can you drive with current fuel? Leave at 0 if tank is empty")
 
 if start_location and end_location:
     try:
         from mapbox import Geocoder, Directions
+        from math import radians, sin, cos, sqrt, atan2
         
         # Initialise Mapbox services
         geocoder = Geocoder(access_token=st.secrets["mapbox_access_token"])
@@ -105,15 +112,110 @@ if start_location and end_location:
             if route_response.status_code == 200:
                 route_data = route_response.json()
                 distance_meters = route_data['routes'][0]['distance']
-                distance_miles = distance_meters * 0.000621371  # Convert to miles
+                distance_miles = distance_meters * 0.000621371
                 duration_seconds = route_data['routes'][0]['duration']
                 duration_minutes = duration_seconds / 60
                 
-                # Calculate fuel needed
-                fuel_needed_gallons = distance_miles / mpg
-                
                 st.success(f"✓ Route found: {distance_miles:.1f} miles ({duration_minutes:.0f} minutes)")
-                st.info(f"Fuel needed: {fuel_needed_gallons:.2f} gallons at {mpg} MPG")
+                
+                # Check if refueling is needed
+                if current_range >= distance_miles:
+                    st.info(f"🎉 Good news! Your current range ({current_range} miles) is enough to complete this journey without refueling.")
+                else:
+                    # Calculate fuel needed
+                    miles_needing_fuel = distance_miles - current_range
+                    fuel_needed_gallons = miles_needing_fuel / mpg
+                    fuel_needed_litres = fuel_needed_gallons * 4.54609
+                    
+                    st.warning(f"⛽ You'll need to refuel: {fuel_needed_litres:.1f} litres needed (after your current {current_range} mile range)")
+                    
+                    # Function to calculate distance between two points (Haversine formula)
+                    def haversine_distance(lon1, lat1, lon2, lat2):
+                        R = 3959  # Earth's radius in miles
+                        lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+                        dlon = lon2 - lon1
+                        dlat = lat2 - lat1
+                        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                        c = 2 * atan2(sqrt(a), sqrt(1-a))
+                        return R * c
+                    
+                    # Function to calculate perpendicular distance from point to line segment
+                    def distance_to_route(station_lon, station_lat, start_lon, start_lat, end_lon, end_lat):
+                        # Distance from start
+                        dist_from_start = haversine_distance(start_lon, start_lat, station_lon, station_lat)
+                        
+                        # Distance from end
+                        dist_from_end = haversine_distance(end_lon, end_lat, station_lon, station_lat)
+                        
+                        # Distance of the route
+                        route_dist = haversine_distance(start_lon, start_lat, end_lon, end_lat)
+                        
+                        # If station is roughly along the route (triangle inequality check)
+                        # The sum of distances shouldn't be much more than the route distance
+                        detour = (dist_from_start + dist_from_end) - route_dist
+                        
+                        return dist_from_start, detour
+                    
+                    # Find stations along the route
+                    filtered_df['dist_from_start'] = filtered_df.apply(
+                        lambda row: distance_to_route(
+                            row['longitude'], row['latitude'],
+                            start_coords[0], start_coords[1],
+                            end_coords[0], end_coords[1]
+                        )[0], axis=1
+                    )
+                    
+                    filtered_df['detour_miles'] = filtered_df.apply(
+                        lambda row: distance_to_route(
+                            row['longitude'], row['latitude'],
+                            start_coords[0], start_coords[1],
+                            end_coords[0], end_coords[1]
+                        )[1], axis=1
+                    )
+                    
+                    # Filter stations:
+                    # 1. Within reasonable detour distance (5 miles)
+                    # 2. Reachable with current range
+                    # 3. That can get us to destination after refueling
+                    reachable_stations = filtered_df[
+                        (filtered_df['detour_miles'] <= 5) &  # Not too far off route
+                        (filtered_df['dist_from_start'] <= current_range)  # Can reach with current fuel
+                    ].copy()
+                    
+                    if len(reachable_stations) > 0:
+                        # Calculate total cost for fuel needed
+                        reachable_stations['total_fuel_cost'] = reachable_stations['fuel_price'] * fuel_needed_litres
+                        
+                        # Sort by total cost
+                        reachable_stations = reachable_stations.sort_values('total_fuel_cost')
+                        
+                        # Show top 10 cheapest options
+                        st.subheader("💰 Cheapest Fuel Stops Along Your Route")
+                        
+                        top_stations = reachable_stations.head(10)
+                        
+                        for idx, station in top_stations.iterrows():
+                            col_a, col_b, col_c, col_d = st.columns([3, 2, 2, 2])
+                            
+                            with col_a:
+                                st.write(f"**{station['brand']}** - {station['address']}")
+                            with col_b:
+                                st.write(f"{station['dist_from_start']:.1f} miles from start")
+                            with col_c:
+                                st.write(f"£{station['fuel_price']:.3f}/L")
+                            with col_d:
+                                st.write(f"**£{station['total_fuel_cost']:.2f}** total")
+                        
+                        # Show savings
+                        cheapest = top_stations.iloc[0]['total_fuel_cost']
+                        most_expensive = top_stations.iloc[-1]['total_fuel_cost']
+                        savings = most_expensive - cheapest
+                        
+                        if savings > 0.5:
+                            st.success(f"💡 You could save £{savings:.2f} by choosing the cheapest option!")
+                    
+                    else:
+                        st.error(f"⚠️ No {selected_fuel} stations found within your current range ({current_range} miles) and along your route. You may need to refuel before starting this journey.")
                 
             else:
                 st.error("Could not calculate route. Please try different locations.")
