@@ -74,7 +74,7 @@ with col2:
 col3, col4 = st.columns(2)
 
 with col3:
-    mpg = st.number_input("Vehicle MPG", min_value=1, max_value=50, value=10, step=0.1)
+    mpg = st.number_input("Vehicle MPG", min_value=1.0, max_value=50.0, value=10.0, step=0.1)
 
 with col4:
     current_range = st.number_input("Current fuel range (miles)", min_value=0, value=0, 
