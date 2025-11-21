@@ -77,7 +77,7 @@ with col3:
     mpg = st.number_input("Vehicle MPG", min_value=1.0, max_value=50.0, value=10.0, step=0.1)
 
 with col4:
-    current_range = st.number_input("Current fuel range (miles)", min_value=0, value=0, 
+    current_range = st.number_input("Current fuel range (miles)", min_value=0, value=10, 
                                     help="How many miles can you drive with current fuel? Leave at 0 if tank is empty")
 
 if start_location and end_location:
@@ -120,14 +120,14 @@ if start_location and end_location:
                 
                 # Check if refueling is needed
                 if current_range >= distance_miles:
-                    st.info(f"🎉 Good news! Your current range ({current_range} miles) is enough to complete this journey without refueling.")
+                    st.info(f"Your current range ({current_range} miles) is enough to complete this journey without refueling.")
                 else:
                     # Calculate fuel needed
                     miles_needing_fuel = distance_miles - current_range
                     fuel_needed_gallons = miles_needing_fuel / mpg
                     fuel_needed_litres = fuel_needed_gallons * 4.54609
                     
-                    st.warning(f"⛽ You'll need to refuel: {fuel_needed_litres:.1f} litres needed (after your current {current_range} mile range)")
+                    st.warning(f"You'll need to refuel: {fuel_needed_litres:.1f} litres needed (after your current {current_range} mile range)")
                     
                     # Function to calculate distance between two points (Haversine formula)
                     def haversine_distance(lon1, lat1, lon2, lat2):
@@ -190,7 +190,7 @@ if start_location and end_location:
                         reachable_stations = reachable_stations.sort_values('total_fuel_cost')
                         
                         # Show top 10 cheapest options
-                        st.subheader("💰 Cheapest Fuel Stops Along Your Route")
+                        st.subheader("Cheapest Fuel Stops Along Your Route")
                         
                         top_stations = reachable_stations.head(10)
                         
@@ -207,12 +207,12 @@ if start_location and end_location:
                                 st.write(f"**£{station['total_fuel_cost']:.2f}** total")
                         
                         # Show savings
-                        cheapest = top_stations.iloc[0]['total_fuel_cost']
-                        most_expensive = top_stations.iloc[-1]['total_fuel_cost']
+                        cheapest = top_stations.iloc[0]['total_fuel_cost'] / 100
+                        most_expensive = top_stations.iloc[-1]['total_fuel_cost'] / 100
                         savings = most_expensive - cheapest
                         
                         if savings > 0.5:
-                            st.success(f"💡 You could save £{savings:.2f} by choosing the cheapest option!")
+                            st.success(f"You could save £{savings:.2f} by choosing the cheapest option!")
                     
                     else:
                         st.error(f"⚠️ No {selected_fuel} stations found within your current range ({current_range} miles) and along your route. You may need to refuel before starting this journey.")
