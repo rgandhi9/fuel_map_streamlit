@@ -184,7 +184,7 @@ if start_location and end_location:
                     
                     if len(reachable_stations) > 0:
                         # Calculate total cost for fuel needed
-                        reachable_stations['total_fuel_cost'] = reachable_stations['fuel_price'] * fuel_needed_litres
+                        reachable_stations['total_fuel_cost'] = (reachable_stations['fuel_price'] * fuel_needed_litres) / 100
                         
                         # Sort by total cost
                         reachable_stations = reachable_stations.sort_values('total_fuel_cost')
@@ -202,13 +202,13 @@ if start_location and end_location:
                             with col_b:
                                 st.write(f"{station['dist_from_start']:.1f} miles from start")
                             with col_c:
-                                st.write(f"£{station['fuel_price']:.3f}/L")
+                                st.write(f"{station['fuel_price']:.3f}p/L")
                             with col_d:
                                 st.write(f"**£{station['total_fuel_cost']:.2f}** total")
                         
                         # Show savings
-                        cheapest = top_stations.iloc[0]['total_fuel_cost'] / 100
-                        most_expensive = top_stations.iloc[-1]['total_fuel_cost'] / 100
+                        cheapest = top_stations.iloc[0]['total_fuel_cost']
+                        most_expensive = top_stations.iloc[-1]['total_fuel_cost']
                         savings = most_expensive - cheapest
                         
                         if savings > 0.5:
