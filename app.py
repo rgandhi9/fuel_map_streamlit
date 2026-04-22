@@ -12,7 +12,24 @@ st.set_page_config(
     layout="wide"
 )
 
-# ── Header ────────────────────────────────────────────────────────────────────
+# ── Default Vehicle Profiles ───────────────────────────────────────────────────
+DEFAULT_VEHICLES = [
+    {"name": "HGV (Artic)",   "mpg": 8.0,  "tank_litres": 400},
+    {"name": "Transit Van",   "mpg": 32.0, "tank_litres": 80},
+    {"name": "Company Car",   "mpg": 45.0, "tank_litres": 55},
+]
+
+# ── Session State Init ─────────────────────────────────────────────────────────
+if "vehicles" not in st.session_state:
+    st.session_state.vehicles = DEFAULT_VEHICLES.copy()
+
+if "selected_vehicle_index" not in st.session_state:
+    st.session_state.selected_vehicle_index = 0
+
+if "fuel_level_pct" not in st.session_state:
+    st.session_state.fuel_level_pct = 50
+
+# ── Header ─────────────────────────────────────────────────────────────────────
 st.markdown("""
     <div style="padding: 1rem 0 0.5rem 0;">
         <h1 style="margin: 0; font-size: 2rem; font-weight: 800; letter-spacing: -0.5px;">
@@ -45,10 +62,11 @@ def load_data():
 
 df = load_data()
 
-# ── Sidebar Filters ────────────────────────────────────────────────────────────
+# ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🔧 Filters")
 
+    # ── Filters ───────────────────────────────────────────────────────────────
+    st.markdown("### 🔧 Filters")
     fuel_types = df["fuel_type"].unique()
     selected_fuel = st.selectbox("Fuel Type", sorted(fuel_types))
 
@@ -57,41 +75,98 @@ with st.sidebar:
     selected_brand = st.selectbox("Brand", brand_options)
 
     st.markdown("---")
-    st.markdown("### 📍 Route Cost Calculator")
 
-    start_location = st.text_input("Start Location", placeholder="e.g., London, UK")
-    end_location = st.text_input("End Location", placeholder="e.g., Manchester, UK")
-    mpg = st.number_input("Vehicle MPG", min_value=1.0, max_value=50.0, value=10.0, step=0.1)
-    current_range = st.number_input(
-        "Current fuel range (miles)", min_value=0, value=10,
-        help="How many miles can you drive on your current fuel? Enter 0 if the tank is empty."
+    # ── Vehicle Profiles ───────────────────────────────────────────────────────
+    st.markdown("### 🚛 My Vehicles")
+
+    vehicle_names = [v["name"] for v in st.session_state.vehicles]
+    selected_vehicle_index = st.selectbox(
+        "Active Vehicle",
+        options=range(len(vehicle_names)),
+        format_func=lambda i: vehicle_names[i],
+        index=st.session_state.selected_vehicle_index,
+        key="vehicle_selector"
     )
+    st.session_state.selected_vehicle_index = selected_vehicle_index
+    active_vehicle = st.session_state.vehicles[selected_vehicle_index]
+
+    # Fuel level slider → derives current range automatically
+    fuel_level_pct = st.slider(
+        "Current Fuel Level",
+        min_value=0, max_value=100,
+        value=st.session_state.fuel_level_pct,
+        step=5, format="%d%%"
+    )
+    st.session_state.fuel_level_pct = fuel_level_pct
+
+    tank_litres = active_vehicle["tank_litres"]
+    mpg = active_vehicle["mpg"]
+    current_fuel_litres = tank_litres * (fuel_level_pct / 100)
+    current_fuel_gallons = current_fuel_litres / 4.54609
+    current_range = current_fuel_gallons * mpg
+
+    st.caption(
+        f"**{active_vehicle['name']}** · {mpg} MPG · {tank_litres}L tank  \n"
+        f"~{current_fuel_litres:.0f}L on board · est. **{current_range:.0f} mile range**"
+    )
+
+    # Add vehicle
+    with st.expander("➕ Add a vehicle"):
+        new_name = st.text_input("Vehicle Name", placeholder="e.g., Sprinter #3", key="new_name")
+        new_mpg = st.number_input("MPG", min_value=1.0, max_value=60.0, value=30.0, step=0.5, key="new_mpg")
+        new_tank = st.number_input("Tank Size (litres)", min_value=10, max_value=1000, value=70, step=5, key="new_tank")
+        if st.button("Add Vehicle", use_container_width=True):
+            if new_name.strip():
+                st.session_state.vehicles.append({
+                    "name": new_name.strip(),
+                    "mpg": new_mpg,
+                    "tank_litres": new_tank
+                })
+                st.session_state.selected_vehicle_index = len(st.session_state.vehicles) - 1
+                st.rerun()
+            else:
+                st.warning("Please enter a vehicle name.")
+
+    # Remove vehicle (only shown when more than one exists)
+    if len(st.session_state.vehicles) > 1:
+        with st.expander("🗑️ Remove a vehicle"):
+            remove_index = st.selectbox(
+                "Select vehicle to remove",
+                options=range(len(st.session_state.vehicles)),
+                format_func=lambda i: st.session_state.vehicles[i]["name"],
+                key="remove_selector"
+            )
+            if st.button("Remove Vehicle", use_container_width=True, type="secondary"):
+                st.session_state.vehicles.pop(remove_index)
+                st.session_state.selected_vehicle_index = 0
+                st.rerun()
 
     st.markdown("---")
 
-    # Data freshness (compact, in sidebar)
+    # ── Route Inputs ───────────────────────────────────────────────────────────
+    st.markdown("### 📍 Route")
+    start_location = st.text_input("Start Location", placeholder="e.g., London, UK")
+    end_location = st.text_input("End Location", placeholder="e.g., Manchester, UK")
+
+    st.markdown("---")
+
+    # ── Data Freshness ─────────────────────────────────────────────────────────
     brand_updates = df.groupby('brand')['last_updated'].max().reset_index()
     brand_updates['last_updated'] = pd.to_datetime(brand_updates['last_updated'])
     now = pd.Timestamp.now(tz=brand_updates['last_updated'].dt.tz)
     brand_updates['hours_ago'] = (now - brand_updates['last_updated']).dt.total_seconds() / 3600
 
-    statuses = []
+    st.markdown("**Data Freshness**")
     for _, row in brand_updates.iterrows():
         h = row['hours_ago']
         icon = '🟢' if h < 24 else '🟡' if h < 48 else '🔴'
         time_str = f"{int(h)}h ago" if h < 24 else f"{int(h/24)}d ago"
-        statuses.append(f"{icon} **{row['brand']}** — {time_str}")
-
-    st.markdown("**Data Freshness**")
-    for s in statuses:
-        st.markdown(s)
+        st.markdown(f"{icon} **{row['brand']}** — {time_str}")
 
 # ── Apply Filters ──────────────────────────────────────────────────────────────
 filtered_df = df[df["fuel_type"] == selected_fuel].copy()
-
 if selected_brand != "All Brands":
     filtered_df = filtered_df[filtered_df["brand"] == selected_brand].copy()
-
 filtered_df = filtered_df.dropna(subset=['fuel_price']).copy()
 
 if len(filtered_df) == 0:
@@ -102,13 +177,12 @@ if len(filtered_df) == 0:
 brand_text = f" · {selected_brand}" if selected_brand != "All Brands" else ""
 st.markdown(f"#### {selected_fuel}{brand_text} — Price Overview across {len(filtered_df):,} stations")
 
-col1, col2, col3, col4 = st.columns(4)
-
 avg_price = filtered_df["fuel_price"].mean()
 min_price = filtered_df["fuel_price"].min()
 max_price = filtered_df["fuel_price"].max()
 cheapest_station = filtered_df.loc[filtered_df["fuel_price"].idxmin()]
 
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric("Average Price", f"{avg_price:.2f}p/L")
 with col2:
@@ -116,13 +190,16 @@ with col2:
 with col3:
     st.metric("Most Expensive", f"{max_price:.2f}p/L", delta=f"{max_price - avg_price:.2f}p vs avg", delta_color="inverse")
 with col4:
-    st.metric("Potential saving (100L)", f"£{(max_price - min_price):.2f}", help="Difference between cheapest and most expensive for a 100 litre fill")
+    st.metric(
+        "Potential saving (100L)", f"£{(max_price - min_price):.2f}",
+        help="Difference between cheapest and most expensive for a 100 litre fill"
+    )
 
 st.markdown(f"📍 Cheapest station: **{cheapest_station['brand']}** — {cheapest_station['address']} ({cheapest_station['postcode']})")
 
 st.divider()
 
-# ── Route Cost Calculator (main area output) ───────────────────────────────────
+# ── Route Cost Calculator ──────────────────────────────────────────────────────
 if start_location and end_location:
     try:
         from mapbox import Geocoder, Directions
@@ -149,6 +226,10 @@ if start_location and end_location:
                 duration_minutes = route_data['routes'][0]['duration'] / 60
 
                 st.subheader(f"🗺️ Route: {start_location} → {end_location}")
+                st.caption(
+                    f"Vehicle: **{active_vehicle['name']}** · {mpg} MPG · "
+                    f"{current_fuel_litres:.0f}L on board · {current_range:.0f} mile range"
+                )
 
                 rc1, rc2 = st.columns(2)
                 with rc1:
@@ -157,12 +238,15 @@ if start_location and end_location:
                     st.metric("Est. Drive Time", f"{duration_minutes:.0f} mins")
 
                 if current_range >= distance_miles:
-                    st.success(f"✅ Your current range ({current_range} miles) is sufficient — no refuel needed.")
+                    st.success(f"✅ Current range ({current_range:.0f} miles) is sufficient — no refuel needed.")
                 else:
                     miles_needing_fuel = distance_miles - current_range
                     fuel_needed_litres = (miles_needing_fuel / mpg) * 4.54609
 
-                    st.info(f"⛽ Estimated refuel needed: **{fuel_needed_litres:.1f} litres** (after your current {current_range} mile range)")
+                    st.info(
+                        f"⛽ Estimated refuel needed: **{fuel_needed_litres:.1f} litres** "
+                        f"(after your current {current_range:.0f} mile range)"
+                    )
 
                     def haversine_distance(lon1, lat1, lon2, lat2):
                         R = 3959
@@ -199,22 +283,23 @@ if start_location and end_location:
                     ].copy()
 
                     if len(reachable_stations) > 0:
-                        reachable_stations['total_fuel_cost'] = (reachable_stations['fuel_price'] * fuel_needed_litres) / 100
+                        reachable_stations['total_fuel_cost'] = (
+                            reachable_stations['fuel_price'] * fuel_needed_litres
+                        ) / 100
                         reachable_stations = reachable_stations.sort_values('total_fuel_cost')
                         top_stations = reachable_stations.head(10)
 
                         st.subheader("🏆 Cheapest Fuel Stops Along Your Route")
 
-                        # Summary saving callout
                         cheapest_cost = top_stations.iloc[0]['total_fuel_cost']
                         priciest_cost = top_stations.iloc[-1]['total_fuel_cost']
                         savings = priciest_cost - cheapest_cost
                         if savings > 0.5:
                             st.success(f"💰 Choosing the cheapest stop could save you **£{savings:.2f}** on this journey.")
 
-                        # Table-style output
-                        display_cols = ['brand', 'address', 'dist_from_start', 'fuel_price', 'total_fuel_cost']
-                        display_df = top_stations[display_cols].copy()
+                        display_df = top_stations[
+                            ['brand', 'address', 'dist_from_start', 'fuel_price', 'total_fuel_cost']
+                        ].copy()
                         display_df.columns = ['Brand', 'Address', 'Miles from Start', 'Price (p/L)', 'Total Cost (£)']
                         display_df['Miles from Start'] = display_df['Miles from Start'].round(1)
                         display_df['Price (p/L)'] = display_df['Price (p/L)'].round(3)
